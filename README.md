@@ -93,10 +93,10 @@ v1.4.3 将协同模式的档案整理移到后台，支持结构化 JSON 请求�
 
 Thanks to everyone who contributed to this project!
 
-<a href="https://github.com/USERNAME">
-  <img src="https://github.com/USERNAME.png"
+<a href="https://github.com/yuanshen-nb111">
+  <img src="https://github.com/yuanshen-nb111.png"
        width="64"
-       alt="USERNAME" />
+       alt="yuanshen-nb111" />
 </a>
 
 
