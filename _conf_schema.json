@@ -6,15 +6,29 @@
   },
   "provider_id": {
     "type": "string",
-    "description": "聊天模型",
-    "hint": "留空时使用当前会话的模型。请选择能稳定遵循结构化回复要求的对话模型。",
+    "description": "档案整理／独立回复模型",
+    "hint": "协同模式的回复继续使用 AstrBot 当前会话模型；此项用于回复发送后的记忆、情绪整理及旧版独立模式。留空沿用当前会话模型。",
     "_special": "select_provider",
     "default": ""
+  },
+  "reply_mode": {
+    "type": "string",
+    "description": "回复方式",
+    "hint": "推荐协同模式：保留 AstrBot 搜索、工具、其他插件和原有会话流程，仅补充角色状态。独立模式沿用旧版接管回复的行为，会绕过默认 Agent 和工具。",
+    "options": ["native", "standalone"],
+    "labels": ["协同 AstrBot 与其他插件（推荐）", "旧版独立回复（不使用主流程工具）"],
+    "default": "native"
+  },
+  "state_update_timeout": {
+    "type": "int",
+    "description": "档案整理等待时间（秒）",
+    "hint": "协同模式在后台整理心理活动、近期记忆和长期记忆。默认等待 60 秒，可设置 15 至 180 秒；不阻塞正常回复、工具和其他插件。失败原因会显示在运行状态页。",
+    "default": 60
   },
   "activation_mode": {
     "type": "string",
     "description": "生效范围",
-    "hint": "默认沿用旧版，接管插件已启用的 QQ 对话。也可仅对选中原生人格或本插件会话技能的 QQ 会话生效。",
+    "hint": "默认增强插件已启用的 QQ 对话。也可仅对选中原生人格或本插件会话技能的 QQ 会话生效。",
     "options": ["qq", "selected_persona"],
     "labels": ["已启用插件的 QQ 会话", "仅选中人格或会话技能时"],
     "default": "qq"
@@ -70,7 +84,7 @@
   "creator_ids": {
     "type": "list",
     "description": "创建者用户 ID",
-    "hint": "从列表选择，或填写 /拟人身份 返回的用户 ID。创建者好感度为 100，角色会优先接下其请求。带平台实例的 ID 可限定适配器。",
+    "hint": "旧配置的初始创建者来源。每个人物仅取第一个适用 ID，可在运行状态页直接指定或替换，之后以面板绑定为准。",
     "_special": "sender_id",
     "default": []
   },

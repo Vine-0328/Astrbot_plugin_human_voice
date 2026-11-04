@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>角色灵魂拟人 · 运行状态</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main class="workspace">
+      <header class="hero">
+        <div class="hero-copy">
+          <span class="hero-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><path d="M16 3c0 7.2 5.8 13 13 13-7.2 0-13 5.8-13 13 0-7.2-5.8-13-13-13 7.2 0 13-5.8 13-13Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M16 11v10m-5-5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <p class="eyebrow">角色档案</p>
+            <h1>角色灵魂拟人</h1>
+            <p class="intro">管理角色在每段对话里积累的关系、记忆与情绪。</p>
+          </div>
+        </div>
+        <button id="refresh" class="button button-quiet" type="button" disabled>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M20 7v5h-5M4.8 17a8 8 0 0 0 13 1.6l2.2-2.1M19.2 7a8 8 0 0 0-13-1.6L4 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          刷新
+        </button>
+      </header>
+
+      <section id="initialization-notice" class="initialization-notice" role="status" aria-live="polite" hidden>
+        <span class="loading-ring" aria-hidden="true"></span>
+        <div>
+          <strong>正在初始化这条角色档案，暂时无法编辑</strong>
+          <p>正在结合已设置的人格和历史记忆补充内容，完成后会自动解锁。模型较慢时请稍候，无需先去插件配置创建档案。</p>
+        </div>
+      </section>
+
+      <div class="layout">
+        <aside class="surface directory" aria-labelledby="directory-title">
+          <div class="section-heading">
+            <h2 id="directory-title">会话档案</h2>
+            <span id="record-count" class="count" aria-label="档案数量">0</span>
+          </div>
+          <label class="search">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="10.8" cy="10.8" r="5.8" stroke="currentColor" stroke-width="1.7"/><path d="m15.2 15.2 4.1 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <input id="search" type="search" aria-label="搜索会话档案" placeholder="搜索 ID 或人物关系" autocomplete="off" disabled>
+          </label>
+          <p id="directory-status" class="directory-status" role="status">正在连接 AstrBot…</p>
+          <ul id="records" class="record-list" aria-label="会话档案列表"></ul>
+        </aside>
+
+        <section class="surface editor" aria-labelledby="profile-title">
+          <div id="empty" class="empty">
+            <div class="empty-symbol" aria-hidden="true">✧</div>
+            <h2 id="empty-title">读取档案中</h2>
+            <p id="empty-description">正在同步最近的角色状态。</p>
+          </div>
+          <form id="editor-form" hidden>
+            <div class="profile-heading">
+              <div>
+                <p class="eyebrow">会话状态</p>
+                <h2 id="profile-title"></h2>
+                <p id="profile-scope" class="profile-scope"></p>
+              </div>
+              <span id="creator-badge" class="creator" hidden>创建者</span>
+            </div>
+
+            <p id="state-update-note" class="state-update-note" role="status" hidden></p>
+
+            <fieldset id="fields">
+              <div class="metrics">
+                <div class="metric affinity">
+                  <label for="affection">好感度</label>
+                  <div class="score"><input id="affection" type="number" min="0" max="100" step="0.01" required><span>/ 100</span></div>
+                  <progress id="affection-meter" max="100" value="0" aria-label="好感度"></progress>
+                  <p id="affection-note">同一用户的各会话共用</p>
+                </div>
+                <div class="metric emotion">
+                  <label for="emotion">情绪</label>
+                  <div class="score"><input id="emotion" type="number" min="0" max="100" step="1" required><span>/ 100</span></div>
+                  <progress id="emotion-meter" max="100" value="0" aria-label="情绪"></progress>
+                  <p id="emotion-note">角色在当前会话的情绪分值</p>
+                  <p id="emotion-behavior">情绪越高越愿意多说，越低回应越简短。</p>
+                </div>
+              </div>
+
+              <div class="field-grid">
+                <fieldset class="identity-field field-wide" aria-describedby="identity-hint creator-transfer-hint">
+                  <legend>对方身份 <span class="multi-label">可多选</span></legend>
+                  <p id="identity-hint">朋友等身份在该用户的各会话共用，创建者按人物指定。</p>
+                  <p id="creator-transfer-hint">同一人物只能指定一位创建者，选择其他用户后会替换原创建者。</p>
+                  <div class="identity-options">
+                    <label class="identity-option"><input id="identity-creator" type="checkbox" name="identity" value="creator" aria-describedby="creator-transfer-hint">创建者</label>
+                    <label class="identity-option"><input type="checkbox" name="identity" value="partner">恋人</label>
+                    <label class="identity-option"><input type="checkbox" name="identity" value="friend">朋友</label>
+                    <label class="identity-option"><input type="checkbox" name="identity" value="classmate">同学</label>
+                    <label class="identity-option"><input type="checkbox" name="identity" value="best_friend">死党</label>
+                    <label class="identity-option"><input type="checkbox" name="identity" value="confidante">闺蜜</label>
+                  </div>
+                </fieldset>
+                <label class="field relationship" for="relationship">
+                  <span>人物关系</span>
+                  <small>自定义身份可写在这里。</small>
+                  <input id="relationship" type="text" maxlength="100" placeholder="例如同学、群友、老朋友">
+                </label>
+                <label class="field" for="memory">
+                  <span>近期记忆</span>
+                  <small>每行一条，最多 20 条</small>
+                  <textarea id="memory" rows="6" placeholder="写下下次聊天用得上的细节。"></textarea>
+                </label>
+                <label class="field" for="psychology">
+                  <span>最新心理活动</span>
+                  <small>角色此刻的感受或对话印象</small>
+                  <textarea id="psychology" rows="6" maxlength="320" placeholder="例如今天有点累，刚才聊到电影时精神好多了。"></textarea>
+                </label>
+                <label class="field field-wide" for="long-term-memory">
+                  <span>长期记忆</span>
+                  <small>角色从历次对话中留下的连贯记录</small>
+                  <textarea id="long-term-memory" rows="5" maxlength="6000" placeholder="记下长期偏好、共同经历或尚未聊完的事。"></textarea>
+                </label>
+                <label class="field field-wide" for="attitude">
+                  <span>对该用户的态度</span>
+                  <small>角色目前怎么看待对方、打算怎样相处</small>
+                  <textarea id="attitude" rows="3" maxlength="1000" placeholder="例如已经熟悉了，平时说话放松，认真聊事时会听完再回应。"></textarea>
+                </label>
+              </div>
+            </fieldset>
+
+            <footer class="editor-footer">
+              <p id="feedback" class="feedback" role="status">修改会在下一次对话中使用。</p>
+              <div class="actions">
+                <button id="discard" class="button button-quiet" type="button" disabled>取消修改</button>
+                <button id="save" class="button button-primary" type="submit" disabled>保存修改</button>
+              </div>
+            </footer>
+          </form>
+        </section>
+      </div>
+
+      <section class="surface editor core-area" aria-labelledby="core-title">
+        <div class="profile-heading">
+          <div>
+            <p class="eyebrow">人格设定</p>
+            <h2 id="core-title">人格核心</h2>
+            <p class="profile-scope" id="core-description">选择会话后编辑该人物实际使用的人格核心。</p>
+          </div>
+        </div>
+        <form id="core-form">
+          <label class="field" for="persona-core">
+            <span class="sr-only">编辑人格核心</span>
+            <textarea id="persona-core" rows="5" maxlength="4000" aria-describedby="core-description" placeholder="写下角色在意什么、遇事怎么做，以及哪些界限始终坚持。" disabled></textarea>
+          </label>
+          <footer class="editor-footer">
+            <p id="core-feedback" class="feedback" role="status">正在读取人格核心…</p>
+            <div class="actions">
+              <button id="core-discard" class="button button-quiet" type="button" disabled>取消修改</button>
+              <button id="core-save" class="button button-primary" type="submit" disabled>保存人格核心</button>
+            </div>
+          </footer>
+        </form>
+      </section>
+
+      <section class="surface reset-area" aria-labelledby="reset-title">
+        <div>
+          <h2 id="reset-title">恢复默认状态</h2>
+          <p id="reset-feedback" class="feedback" role="status">将全部会话恢复为初始状态，并恢复默认灵魂设定。</p>
+        </div>
+        <button id="reset-all" class="button button-danger-outline" type="button" disabled>重置全部</button>
+      </section>
+
+      <dialog id="reset-dialog" aria-labelledby="reset-dialog-title" aria-describedby="reset-description">
+        <h2 id="reset-dialog-title">重置全部角色状态？</h2>
+        <p id="reset-description">所有会话的好感度、人物关系和情绪会恢复为初始值，情绪起点按当前性格计算。面板选中的对方身份、记忆、心理活动和态度会清空，人格核心与灵魂设定会恢复默认。会话档案、插件设置中的创建者名单、模型和角色身份设定会保留。</p>
+        <p id="reset-draft" class="reset-warning" hidden>当前未保存的修改也会被清除。</p>
+        <p id="reset-error" class="reset-warning" role="alert" hidden></p>
+        <div class="actions reset-actions">
+          <button id="reset-cancel" class="button button-quiet" type="button" autofocus>取消</button>
+          <button id="reset-confirm" class="button button-danger" type="button">确认重置</button>
+        </div>
+      </dialog>
+      <dialog id="refresh-dialog" aria-labelledby="refresh-dialog-title" aria-describedby="refresh-description">
+        <h2 id="refresh-dialog-title">刷新当前状态？</h2>
+        <p id="refresh-description">读取成功后，未保存的修改会被最新的已保存状态替换。</p>
+        <div class="actions reset-actions">
+          <button id="refresh-cancel" class="button button-quiet" type="button" autofocus>取消</button>
+          <button id="refresh-confirm" class="button button-primary" type="button">继续刷新</button>
+        </div>
+      </dialog>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -2,7 +2,7 @@ name: astrbot_plugin_human_voice
 display_name: 角色灵魂拟人
 desc: 让 QQ 聊天角色按人设表达态度和情绪，记住谈话线索，并维护每个人的好感度与人物关系。
 short_desc: 带角色记忆和好感度的 QQ 拟人聊天。
-version: v1.3.2
+version: v1.4.3
 author: Vine-0328
 astrbot_version: ">=4.29.4,<5"
 support_platforms:

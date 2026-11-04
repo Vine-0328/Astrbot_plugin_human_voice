@@ -24,6 +24,14 @@ EMOTION_RULES = {
     "cool": (60, 0, 1),
     "neutral": (70, 2, 2),
 }
+IDENTITY_LABELS = {
+    "creator": "创建者",
+    "partner": "恋人",
+    "friend": "朋友",
+    "classmate": "同学",
+    "best_friend": "死党",
+    "confidante": "闺蜜",
+}
 CARE_THRESHOLDS = range(50, 101, 10)
 MEMORY_LIMIT = 20
 MEMORY_TEXT_LIMIT = 240
@@ -48,6 +56,8 @@ class StateSnapshot:
     emotion: int = 70
     long_term_memory: str = ""
     attitude: str = ""
+    identities: tuple[str, ...] = ()
+    initialized: bool = False
 
 
 def _clean(value: object, limit: int) -> str:
@@ -61,6 +71,15 @@ def _memories(value: object) -> list[str]:
         return []
     items = [_clean(item, MEMORY_TEXT_LIMIT) for item in value]
     return list(dict.fromkeys(item for item in items if item))[-MEMORY_LIMIT:]
+
+
+def _identity_keys(user, creator: bool = False) -> tuple[str, ...]:
+    stored = json.loads(user["identities"]) if user else []
+    return tuple(
+        key
+        for key in IDENTITY_LABELS
+        if (creator if key == "creator" else key in stored)
+    )
 
 
 def _normalise_overrides(overrides: Mapping[str, object]) -> tuple[dict, dict]:
@@ -104,7 +123,7 @@ def _validate_edit(changes: Mapping[str, object], creator: bool) -> dict:
         ("long_term_memory", "长期记忆", LONG_TERM_MEMORY_LIMIT),
         ("attitude", "态度", ATTITUDE_LIMIT),
     )
-    editable = {"affection", "memory", "emotion"} | {
+    editable = {"affection", "memory", "emotion", "identities"} | {
         field for field, _, _ in text_fields
     }
     if not isinstance(changes, Mapping) or not changes or changes.keys() - editable:
@@ -148,6 +167,16 @@ def _validate_edit(changes: Mapping[str, object], creator: bool) -> dict:
         ):
             raise ValueError(f"每条记忆最多 {MEMORY_TEXT_LIMIT} 字")
         validated["memory"] = json.dumps(_memories(memories), ensure_ascii=False)
+    if "identities" in changes:
+        identities = changes["identities"]
+        if not isinstance(identities, list) or any(
+            not isinstance(identity, str) or identity not in IDENTITY_LABELS
+            for identity in identities
+        ):
+            raise ValueError("请选择有效的身份标签")
+        validated["identities"] = json.dumps(
+            [identity for identity in IDENTITY_LABELS if identity in identities]
+        )
     return validated
 
 
@@ -163,7 +192,12 @@ class StateStore:
                     user_id TEXT PRIMARY KEY,
                     score INTEGER NOT NULL DEFAULT 4000,
                     relationship TEXT NOT NULL DEFAULT '初识',
-                    overrides TEXT NOT NULL DEFAULT '{}'
+                    overrides TEXT NOT NULL DEFAULT '{}',
+                    identities TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TABLE IF NOT EXISTS creator_bindings (
+                    persona_key TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
                     user_id TEXT NOT NULL,
@@ -176,6 +210,7 @@ class StateStore:
                     emotion INTEGER,
                     long_term_memory TEXT NOT NULL DEFAULT '',
                     attitude TEXT NOT NULL DEFAULT '',
+                    initialized INTEGER NOT NULL DEFAULT 0,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (user_id, scope)
                 );
@@ -200,6 +235,13 @@ class StateStore:
                 """
             )
         with self._connect(write=True) as db:
+            user_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(users)")
+            }
+            if "identities" not in user_columns:
+                db.execute(
+                    "ALTER TABLE users ADD COLUMN identities TEXT NOT NULL DEFAULT '[]'"
+                )
             columns = {row["name"] for row in db.execute("PRAGMA table_info(sessions)")}
             if "emotion" not in columns:
                 # Old rows adopt the configured starting emotion on their next turn.
@@ -211,6 +253,10 @@ class StateStore:
             if "attitude" not in columns:
                 db.execute(
                     "ALTER TABLE sessions ADD COLUMN attitude TEXT NOT NULL DEFAULT ''"
+                )
+            if "initialized" not in columns:
+                db.execute(
+                    "ALTER TABLE sessions ADD COLUMN initialized INTEGER NOT NULL DEFAULT 0"
                 )
 
     @contextmanager
@@ -231,13 +277,13 @@ class StateStore:
             db.execute("DELETE FROM care")
             db.execute("DELETE FROM processed_events")
             db.execute(
-                "UPDATE users SET score = ?, relationship = '初识', overrides = '{}'",
+                "UPDATE users SET score = ?, relationship = '初识', overrides = '{}', identities = '[]'",
                 (INITIAL_SCORE,),
             )
             db.execute(
                 """UPDATE sessions SET memories = '[]', psychology = '', dialogue = '[]',
                    awaiting_clarification = 0, overrides = '{}', emotion = NULL,
-                   long_term_memory = '', attitude = ''"""
+                   long_term_memory = '', attitude = '', initialized = 1"""
             )
 
     @staticmethod
@@ -279,6 +325,8 @@ class StateStore:
             else _emotion_default(emotion_style),
             long_term_memory=session["long_term_memory"] if session else "",
             attitude=session["attitude"] if session else "",
+            identities=_identity_keys(user, creator),
+            initialized=bool(session and session["initialized"]),
         )
 
     @staticmethod
@@ -362,6 +410,39 @@ class StateStore:
                 is not None
             )
 
+    def identities_for(self, user_id: str) -> tuple[str, ...]:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT identities FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return _identity_keys(row)
+
+    def creator_for(self, persona_key: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT user_id FROM creator_bindings WHERE persona_key = ?",
+                (persona_key,),
+            ).fetchone()
+            return row["user_id"] or None if row else None
+
+    def legacy_creator_for(self, user_id: str) -> bool:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT identities FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return bool(row and "creator" in json.loads(row["identities"]))
+
+    def seed_creator(self, persona_key: str, user_id: str) -> bool:
+        if not persona_key or not user_id:
+            raise ValueError("请选择角色和创建者")
+        with self._connect(write=True) as db:
+            return bool(
+                db.execute(
+                    "INSERT OR IGNORE INTO creator_bindings (persona_key, user_id) VALUES (?, ?)",
+                    (persona_key, user_id),
+                ).rowcount
+            )
+
     def record(
         self,
         user_id: str,
@@ -428,12 +509,10 @@ class StateStore:
                 else _emotion_default(emotion_style)
             )
             emotion = _next_emotion(current_emotion, emotion_style, category)
-            summary = (
-                _clean(long_term_memory, LONG_TERM_MEMORY_LIMIT)
-                if long_term_memory is not None
-                else session["long_term_memory"]
-                if session
-                else ""
+            # An omitted or empty model summary must not erase an existing memory.
+            # The dashboard edit endpoint remains the explicit way to clear it.
+            summary = _clean(long_term_memory, LONG_TERM_MEMORY_LIMIT) or (
+                session["long_term_memory"] if session else ""
             )
             updated_attitude = (
                 _clean(attitude, ATTITUDE_LIMIT)
@@ -509,13 +588,17 @@ class StateStore:
             "user_id": user["user_id"],
             "scope": session["scope"],
             "affection": 100.0 if creator else user["score"] / 100,
+            "base_affection": user["score"] / 100,
             "relationship": relationship,
             "memory": json.loads(session["memories"]),
             "psychology": session["psychology"],
             "emotion": _emotion_default(emotion_style) if emotion is None else emotion,
             "creator": creator,
+            "legacy_creator": "creator" in json.loads(user["identities"]),
             "long_term_memory": session["long_term_memory"],
             "attitude": session["attitude"],
+            "identities": list(_identity_keys(user, creator)),
+            "initialized": bool(session["initialized"]),
         }
 
     def list_status(
@@ -527,8 +610,8 @@ class StateStore:
     ) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
-                """SELECT users.user_id, score, relationship, scope, memories, psychology, emotion,
-                   long_term_memory, attitude
+                """SELECT users.user_id, score, relationship, identities, scope, memories, psychology, emotion,
+                   long_term_memory, attitude, initialized
                    FROM users JOIN sessions USING(user_id)
                    ORDER BY updated_at DESC, users.user_id, scope LIMIT ?""",
                 (max(1, min(limit, 250)),),
@@ -546,24 +629,54 @@ class StateStore:
         changes: Mapping[str, object],
         creator: bool = False,
         emotion_style: str = "neutral",
+        persona_key: str = "default",
+        overrides: Mapping[str, object] | None = None,
     ) -> dict:
         values = _validate_edit(changes, creator)
         with self._connect(write=True) as db:
             user, session = self._rows(db, user_id, scope)
             if user is None or session is None:
                 raise KeyError((user_id, scope))
-            if values:
+            if overrides is not None:
+                self._apply_overrides(db, user_id, scope, overrides)
+                user, session = self._rows(db, user_id, scope)
+            if "identities" in values:
+                if not persona_key:
+                    raise ValueError("请选择当前角色")
+                identities = json.loads(values["identities"])
+                if "creator" in identities:
+                    db.execute(
+                        """INSERT INTO creator_bindings (persona_key, user_id) VALUES (?, ?)
+                           ON CONFLICT(persona_key) DO UPDATE SET user_id = excluded.user_id""",
+                        (persona_key, user_id),
+                    )
+                else:
+                    # Keep the empty binding so old configuration cannot re-seed a released creator.
+                    db.execute(
+                        "UPDATE creator_bindings SET user_id = '' WHERE persona_key = ? AND user_id = ?",
+                        (persona_key, user_id),
+                    )
+                values["identities"] = json.dumps(
+                    [key for key in identities if key != "creator"]
+                )
+            if values or not session["initialized"]:
                 db.execute(
                     """UPDATE users SET score = COALESCE(?, score),
-                       relationship = COALESCE(?, relationship) WHERE user_id = ?""",
-                    (values.get("affection"), values.get("relationship"), user_id),
+                       relationship = COALESCE(?, relationship),
+                       identities = COALESCE(?, identities) WHERE user_id = ?""",
+                    (
+                        values.get("affection"),
+                        values.get("relationship"),
+                        values.get("identities"),
+                        user_id,
+                    ),
                 )
                 db.execute(
                     """UPDATE sessions SET memories = COALESCE(?, memories),
                        psychology = COALESCE(?, psychology), emotion = COALESCE(?, emotion),
                        long_term_memory = COALESCE(?, long_term_memory),
                        attitude = COALESCE(?, attitude),
-                       updated_at = ? WHERE user_id = ? AND scope = ?""",
+                       updated_at = ?, initialized = 1 WHERE user_id = ? AND scope = ?""",
                     (
                         values.get("memory"),
                         values.get("psychology"),
@@ -577,3 +690,53 @@ class StateStore:
                 )
                 user, session = self._rows(db, user_id, scope)
             return self._status_row(user, session, creator, emotion_style)
+
+    def initialize_missing(
+        self, user_id: str, scope: str, changes: Mapping[str, object]
+    ) -> dict:
+        values = (
+            {}
+            if isinstance(changes, Mapping) and not changes
+            else _validate_edit(changes, creator=False)
+        )
+        with self._connect(write=True) as db:
+            user, session = self._rows(db, user_id, scope)
+            if user is None or session is None:
+                raise KeyError((user_id, scope))
+            if session["initialized"]:
+                return self._status_row(user, session, False, "neutral")
+            relationship = user["relationship"]
+            if relationship in {"", "初识"}:
+                relationship = values.get("relationship", relationship)
+            identities = user["identities"]
+            if not json.loads(identities) and "identities" in values:
+                identities = json.dumps(
+                    [
+                        key
+                        for key in json.loads(values["identities"])
+                        if key != "creator"
+                    ]
+                )
+            memories = session["memories"]
+            if not json.loads(memories):
+                memories = values.get("memory", memories)
+            db.execute(
+                "UPDATE users SET relationship = ?, identities = ? WHERE user_id = ?",
+                (relationship, identities, user_id),
+            )
+            db.execute(
+                """UPDATE sessions SET memories = ?,
+                   psychology = ?, long_term_memory = ?, attitude = ?, initialized = 1,
+                   updated_at = ? WHERE user_id = ? AND scope = ?""",
+                (
+                    memories,
+                    session["psychology"] or values.get("psychology", ""),
+                    session["long_term_memory"] or values.get("long_term_memory", ""),
+                    session["attitude"] or values.get("attitude", ""),
+                    time.time(),
+                    user_id,
+                    scope,
+                ),
+            )
+            user, session = self._rows(db, user_id, scope)
+            return self._status_row(user, session, False, "neutral")
