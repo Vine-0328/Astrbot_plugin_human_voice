@@ -89,6 +89,19 @@ v1.4.3 将协同模式的档案整理移到后台，支持结构化 JSON 请求�
 
 运行状态保存在 AstrBot 的 `data/plugin_data/astrbot_plugin_human_voice/state.sqlite3`。迁移时可连同插件配置一起备份。
 
+## 贡献者
+
+Thanks to everyone who contributed to this project!
+
+<a href="https://github.com/USERNAME">
+  <img src="https://github.com/USERNAME.png"
+       width="64"
+       alt="USERNAME" />
+</a>
+
+
+感谢https://github.com/yuanshen-nb111 提出的插件冲突，日志不加载，插件优先级过高覆盖AstrBot逻辑等问题，在本次更新中已修复。
+
 ## AstrBot 文档
 
 - [插件开发指南](https://docs.astrbot.app/dev/star/plugin-new.html)
