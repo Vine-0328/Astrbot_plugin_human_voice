@@ -1,0 +1,2 @@
+# Astrbot_plugin_human_voice
+让你的聊天机器人拥有灵魂更像人类
