@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import random
 import re
 import sqlite3
 import time
@@ -21,13 +22,16 @@ from astrbot.core.message.message_event_result import ResultContentType
 from .bootstrap import suggest_initial_state
 from .integration import (
     CONTEXT_MARKER,
+    HOSTILITY_GUIDANCE,
     NATIVE_FALLBACK_ROLE,
+    RETORT_GUIDANCE,
     STATE_INSTRUCTIONS,
     StateUpdate,
     emotion_expression,
     merge_memory_summary,
     native_context,
     parse_state_update,
+    retort_policy,
 )
 from .persona import (
     NATIVE_PERSONA_ID,
@@ -55,6 +59,7 @@ PLUGIN_NAME = "astrbot_plugin_human_voice"
 QQ_PLATFORMS = {"aiocqhttp", "qq_official", "qq_official_webhook"}
 FOLLOWUP_SECONDS = 90
 NATIVE_TURN_KEY = f"{PLUGIN_NAME}:native_turn"
+RETORT_ROLL_KEY = f"{PLUGIN_NAME}:retort_roll"
 RESET_CONFIG_FIELDS = ("soul", "persona_core", "memory", "psychology", "relationships")
 CARE_MESSAGES = {
     50: "对了，你今天有好好吃饭吗？",
@@ -627,6 +632,25 @@ class HumanVoicePlugin(Star):
             for part in event.get_messages()
         )
 
+    @staticmethod
+    def reaction_policy(
+        event: AstrMessageEvent, affection: float, emotion: int, *, creator: bool
+    ) -> dict:
+        replying_to_other = HumanVoicePlugin.replies_to_other(event)
+        roll = None
+        if affection < 30 and not creator and not replying_to_other:
+            roll = event.get_extra(RETORT_ROLL_KEY)
+            if type(roll) not in (float, int) or not 0 <= roll < 1:
+                roll = random.random()
+                event.set_extra(RETORT_ROLL_KEY, roll)
+        return retort_policy(
+            affection,
+            emotion,
+            roll,
+            creator=creator,
+            replying_to_other=replying_to_other,
+        )
+
     @filter.on_llm_request(priority=-100)
     async def inject_native_state(self, event: AstrMessageEvent, req: ProviderRequest):
         if not self.native_enabled(event) or self.reset_lock.locked():
@@ -675,6 +699,9 @@ class HumanVoicePlugin(Star):
                     "recent_dialogue": snapshot.dialogue,
                     "awaiting_clarification": snapshot.awaiting_clarification,
                     "replying_to_other": self.replies_to_other(event),
+                    "retort_policy": self.reaction_policy(
+                        event, snapshot.score, snapshot.emotion, creator=creator
+                    ),
                 }
                 fallback_role = ""
                 if not native_style.strip():
@@ -1021,6 +1048,9 @@ class HumanVoicePlugin(Star):
             "message": text,
             "mention_only": not text,
             "replying_to_other": self.replies_to_other(event),
+            "retort_policy": self.reaction_policy(
+                event, snapshot.score, snapshot.emotion, creator=creator
+            ),
         }
         if display_name := self.bot_account_display_name(event):
             conversation["bot_account_display_name"] = display_name
@@ -1141,6 +1171,9 @@ class HumanVoicePlugin(Star):
             )
             if creator:
                 instructions += f"\n\n{AUTHORITATIVE_CREATOR_CONTEXT if role_prompt else CREATOR_INSTRUCTIONS}"
+            instructions += f"\n\n【言语事件分类说明】\n{HOSTILITY_GUIDANCE}"
+            if conversation.get("retort_policy", {}).get("eligible_by_relationship"):
+                instructions += f"\n\n【低好感度下受挑衅的回应】\n{RETORT_GUIDANCE}"
             if conversation.get("replying_to_other"):
                 instructions += "\n当前用户引用或回复的是其他人。本轮先按角色语气只问一个简短问题，确认是否在向你说话或指什么；不要自行分析引用内容、代答他人的对话。此项仍服从当前人格核心。"
             raw = await self.generate(scope, instructions, conversation, timeout=45)
